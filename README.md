@@ -18,8 +18,6 @@ A React-based dashboard for visualizing railway data, including routes, revenue,
       - [Deploying to GitHub Pages](#deploying-to-github-pages)
    - [Cache Invalidation Strategy](#cache-invalidation-strategy)
    - [Data](#data)
-   - [Dashboard Sections](#dashboard-sections)
-   - [Key Insights](#key-insights)
 
 ## Features
 
@@ -434,34 +432,3 @@ The application uses a sample CSV file (`public/railway.csv`) for demonstration 
 - Refund Request
 
 The application includes intelligent column mapping to handle slight variations in column names.
-
-## Dashboard Sections
-
-1. **Popular Routes & Times**
-   - Top 10 popular routes
-   - Hourly distribution of journeys
-
-2. **Revenue Analysis**
-   - Revenue by ticket type
-   - Revenue by ticket class
-   - Revenue trends by month
-   - Revenue trends by day of week
-
-3. **Performance Metrics**
-   - Journey status (on time, delayed, cancelled)
-   - Delay reasons
-   - Routes with highest average delays
-   - Refund requests analysis
-
-## Key Insights
-
-The dashboard automatically calculates and displays key insights from the data:
-
-- Manchester-Liverpool is identified as the most popular route with over 7,600 combined journeys
-- Clear morning (6-8 AM) and evening (4-6 PM) peak travel hours are identified
-- Advance tickets generate the highest revenue (£309,274)
-- Standard class accounts for approximately 80% of total revenue
-- 87% of journeys arrive on time, 7% are delayed, and 6% are cancelled
-- Weather conditions are the primary reason for delays (40% of all delays)
-- Manchester Piccadilly to Leeds has the highest average delay (144 minutes)
-- The dashboard calculates the percentage of passengers who request refunds after delays and cancellations, providing insights into customer behavior and potential revenue impact 
