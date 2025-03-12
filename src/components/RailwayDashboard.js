@@ -50,6 +50,7 @@ const RailwayDashboard = () => {
     revenueByDayOfWeek: [],
     routesWithDelay: [],
     refundRequests: [],
+    manchesterLiverpoolCount: 0,
   });
 
   useEffect(() => {
@@ -338,6 +339,13 @@ const RailwayDashboard = () => {
         .slice(0, 10)
         .map(([route, count]) => ({ route, count }));
 
+      // Log Manchester-Liverpool route count
+      const manchesterLiverpoolCount =
+        routeCounts["Manchester Piccadilly to Liverpool Lime Street"] || 0;
+      console.log(
+        `Manchester Piccadilly to Liverpool Lime Street journeys: ${manchesterLiverpoolCount}`
+      );
+
       // 2. Hourly Distribution
       const hourCounts = {};
       data.forEach((record) => {
@@ -601,6 +609,7 @@ const RailwayDashboard = () => {
         revenueByDayOfWeek: revenueByDayOfWeekChart,
         routesWithDelay,
         refundRequests,
+        manchesterLiverpoolCount,
       });
     } catch (error) {
       console.error("Error analyzing data:", error);
@@ -1044,8 +1053,8 @@ const RailwayDashboard = () => {
           <h3 className="text-lg font-semibold mb-2">Key Findings:</h3>
           <ul className="list-disc pl-5 space-y-1">
             <li>
-              Manchester-Liverpool is the most popular route with over 7,600
-              combined journeys
+              Manchester-Liverpool is the most popular route with{" "}
+              {dashboardData.manchesterLiverpoolCount} combined journeys
             </li>
             <li>
               Clear morning (6-8 AM) and evening (4-6 PM) peak hours identified
@@ -1078,7 +1087,7 @@ const RailwayDashboard = () => {
                       100
                   )}% of passengers request refunds after delays`
                 : "24% of passengers request refunds after delays"}
-              , while
+              , while{" "}
               {dashboardData.refundRequests.find(
                 (r) => r.status === "Cancelled"
               )
