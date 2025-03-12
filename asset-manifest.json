@@ -1,12 +1,12 @@
 {
   "files": {
-    "main.css": "/railway-dashboard/static/css/main.66cf9472.css",
-    "main.js": "/railway-dashboard/static/js/main.498f30c4.js",
+    "main.css": "/railway-dashboard/static/css/main.10f6525b.css",
+    "main.js": "/railway-dashboard/static/js/main.c6ee2117.js",
     "static/js/206.744b1058.chunk.js": "/railway-dashboard/static/js/206.744b1058.chunk.js",
     "index.html": "/railway-dashboard/index.html"
   },
   "entrypoints": [
-    "static/css/main.66cf9472.css",
-    "static/js/main.498f30c4.js"
+    "static/css/main.10f6525b.css",
+    "static/js/main.c6ee2117.js"
   ]
 }
