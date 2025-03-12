@@ -2,6 +2,22 @@
 
 A React-based dashboard for visualizing railway data, including routes, revenue, and performance metrics.
 
+- [Railway Dashboard](#railway-dashboard)
+   - [Features](#features)
+   - [Data Processing \& Computations](#data-processing--computations)
+      - [1. Popular Routes \& Times](#1-popular-routes--times)
+      - [2. Revenue Analysis](#2-revenue-analysis)
+      - [3. Performance Metrics](#3-performance-metrics)
+   - [Technologies Used](#technologies-used)
+   - [Getting Started](#getting-started)
+      - [Prerequisites](#prerequisites)
+      - [Installation](#installation)
+      - [Running the Application](#running-the-application)
+      - [Building for Production](#building-for-production)
+   - [Cache Invalidation Strategy](#cache-invalidation-strategy)
+   - [Data](#data)
+   - [Dashboard Sections](#dashboard-sections)
+
 ## Features
 
 - **Popular Routes & Times**: View the most popular routes and peak travel times
