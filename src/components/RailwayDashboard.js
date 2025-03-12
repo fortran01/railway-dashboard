@@ -2,8 +2,6 @@ import React, { useState, useEffect } from "react";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
   PieChart,
   Pie,
   AreaChart,
@@ -29,16 +27,6 @@ const COLORS = [
   "#82ca9d",
   "#ffc658",
 ];
-const ROUTE_COLORS = [
-  "#003f5c",
-  "#2f4b7c",
-  "#665191",
-  "#a05195",
-  "#d45087",
-  "#f95d6a",
-  "#ff7c43",
-  "#ffa600",
-];
 const DELAY_COLORS = {
   "Signal Failure": "#e41a1c",
   "Technical Issue": "#377eb8",
@@ -49,8 +37,8 @@ const DELAY_COLORS = {
 
 const RailwayDashboard = () => {
   const [activeTab, setActiveTab] = useState("routes");
-  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [dashboardData, setDashboardData] = useState({
     topRoutes: [],
     hourlyDistribution: [],
@@ -67,414 +55,561 @@ const RailwayDashboard = () => {
   useEffect(() => {
     const processData = async () => {
       try {
-        // For demo purposes, we'll use mock data since we don't have access to the file system
-        // In a real application, you would use the actual file reading logic
+        console.log("Loading data from CSV file...");
 
-        // Use the correct file path - railway.csv in the public folder
-        const csvFilePath = "railway.csv";
+        let response;
+        let csvText;
 
-        // Attempt to fetch the CSV file
-        const response = await fetch(csvFilePath);
-        if (!response.ok) {
+        // First try with process.env.PUBLIC_URL
+        try {
+          response = await fetch(`${process.env.PUBLIC_URL}/railway.csv`);
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch CSV file: ${response.statusText} (Status: ${response.status})`
+            );
+          }
+          csvText = await response.text();
+        } catch (fetchError) {
+          console.warn("First fetch attempt failed:", fetchError);
+
+          // Try with a direct path as fallback
+          console.log("Trying fallback fetch method...");
+          response = await fetch("/railway.csv");
+          if (!response.ok) {
+            throw new Error(
+              `Both fetch attempts failed. Last error: ${response.statusText} (Status: ${response.status})`
+            );
+          }
+          csvText = await response.text();
+        }
+
+        // Check if the response is actually a CSV file
+        const contentType = response.headers.get("content-type");
+        console.log("Content type:", contentType);
+
+        if (contentType && contentType.includes("text/html")) {
           throw new Error(
-            `Failed to fetch ${csvFilePath}: ${response.status} ${response.statusText}`
+            "Received HTML instead of CSV data. The server might be returning an error page."
           );
         }
 
-        const csvText = await response.text();
-        const parsedData = Papa.parse(csvText, {
+        // Check if the first few characters look like CSV
+        if (
+          csvText.trim().startsWith("<!DOCTYPE") ||
+          csvText.trim().startsWith("<html")
+        ) {
+          throw new Error(
+            "Received HTML instead of CSV data. The server might be returning an error page."
+          );
+        }
+
+        console.log("First 100 characters of CSV:", csvText.substring(0, 100));
+
+        // Parse the CSV data using Papa Parse
+        Papa.parse(csvText, {
           header: true,
           dynamicTyping: true,
           skipEmptyLines: true,
+          delimiter: ",", // Explicitly set the delimiter to comma
+          transformHeader: (header) => {
+            // Trim whitespace from headers
+            return header.trim();
+          },
+          complete: (results) => {
+            if (results.errors && results.errors.length > 0) {
+              console.warn("CSV parsing had some errors:", results.errors);
+
+              // If there are critical errors, show them to the user
+              const criticalErrors = results.errors.filter(
+                (e) => e.type === "Delimiter" || e.type === "FieldMismatch"
+              );
+              if (criticalErrors.length > 0) {
+                setError(
+                  `CSV parsing errors: ${criticalErrors
+                    .map((e) => e.message)
+                    .join(", ")}`
+                );
+                setLoading(false);
+                return;
+              }
+            }
+
+            let csvData = results.data;
+            console.log(
+              `Successfully loaded ${csvData.length} records from CSV`
+            );
+
+            // Filter out any empty rows
+            csvData = csvData.filter(
+              (record) =>
+                Object.keys(record).length > 0 &&
+                Object.values(record).some(
+                  (value) =>
+                    value !== null && value !== undefined && value !== ""
+                )
+            );
+
+            if (csvData.length === 0) {
+              setError(
+                "No valid data found in the CSV file after filtering empty rows."
+              );
+              setLoading(false);
+              return;
+            }
+
+            // Get the actual column names from the CSV
+            const actualColumns = Object.keys(csvData[0]);
+            console.log("Actual CSV columns:", actualColumns);
+
+            // Validate that the CSV has the required columns
+            if (csvData.length > 0) {
+              const requiredColumns = [
+                "Departure Station",
+                "Arrival Destination",
+                "Departure Time",
+                "Arrival Time",
+                "Actual Arrival Time",
+                "Journey Status",
+                "Reason for Delay",
+                "Ticket Type",
+                "Ticket Class",
+                "Price",
+                "Date of Journey",
+                "Refund Request",
+              ];
+
+              // Check if all required columns exist in the actual columns
+              const missingColumns = requiredColumns.filter(
+                (column) => !actualColumns.includes(column)
+              );
+
+              if (missingColumns.length > 0) {
+                // Try to map column names that might be slightly different
+                const columnMapping = {
+                  "Departure Station": [
+                    "DepartureStation",
+                    "Departure_Station",
+                    "From",
+                  ],
+                  "Arrival Destination": [
+                    "ArrivalDestination",
+                    "Arrival_Destination",
+                    "To",
+                    "Destination",
+                  ],
+                  "Departure Time": [
+                    "DepartureTime",
+                    "Departure_Time",
+                    "Start Time",
+                  ],
+                  "Arrival Time": ["ArrivalTime", "Arrival_Time", "End Time"],
+                  "Actual Arrival Time": [
+                    "ActualArrivalTime",
+                    "Actual_Arrival_Time",
+                    "Real Arrival Time",
+                  ],
+                  "Journey Status": [
+                    "JourneyStatus",
+                    "Journey_Status",
+                    "Status",
+                  ],
+                  "Reason for Delay": [
+                    "ReasonForDelay",
+                    "Reason_For_Delay",
+                    "Delay Reason",
+                  ],
+                  "Ticket Type": ["TicketType", "Ticket_Type"],
+                  "Ticket Class": ["TicketClass", "Ticket_Class", "Class"],
+                  Price: ["Cost", "Fare", "Amount"],
+                  "Date of Journey": [
+                    "DateOfJourney",
+                    "Date_Of_Journey",
+                    "Travel Date",
+                  ],
+                  "Refund Request": [
+                    "RefundRequest",
+                    "Refund_Request",
+                    "Refund",
+                  ],
+                };
+
+                // Create a mapping from actual columns to required columns
+                const actualToRequired = {};
+                actualColumns.forEach((actualCol) => {
+                  for (const [reqCol, alternatives] of Object.entries(
+                    columnMapping
+                  )) {
+                    if (
+                      alternatives.includes(actualCol) ||
+                      actualCol.toLowerCase() === reqCol.toLowerCase() ||
+                      actualCol.toLowerCase().replace(/\s+/g, "") ===
+                        reqCol.toLowerCase().replace(/\s+/g, "")
+                    ) {
+                      actualToRequired[actualCol] = reqCol;
+                      break;
+                    }
+                  }
+                });
+
+                // If we found mappings, rename the columns in the data
+                if (Object.keys(actualToRequired).length > 0) {
+                  console.log("Mapping columns:", actualToRequired);
+                  csvData = csvData.map((record) => {
+                    const newRecord = { ...record };
+                    for (const [actualCol, reqCol] of Object.entries(
+                      actualToRequired
+                    )) {
+                      if (record[actualCol] !== undefined) {
+                        newRecord[reqCol] = record[actualCol];
+                      }
+                    }
+                    return newRecord;
+                  });
+
+                  // Check again for missing columns after mapping
+                  const stillMissingColumns = requiredColumns.filter(
+                    (column) =>
+                      !Object.keys(csvData[0]).includes(column) &&
+                      !Object.values(actualToRequired).includes(column)
+                  );
+
+                  if (stillMissingColumns.length > 0) {
+                    setError(
+                      `CSV is still missing required columns after mapping: ${stillMissingColumns.join(
+                        ", "
+                      )}. Found columns: ${actualColumns.join(", ")}`
+                    );
+                    setLoading(false);
+                    return;
+                  }
+                } else {
+                  setError(
+                    `CSV is missing required columns: ${missingColumns.join(
+                      ", "
+                    )}. Found columns: ${actualColumns.join(", ")}`
+                  );
+                  setLoading(false);
+                  return;
+                }
+              }
+            }
+
+            analyzeData(csvData);
+            setLoading(false);
+          },
+          error: (error) => {
+            console.error("Error parsing CSV:", error);
+            setError(`Error parsing CSV: ${error.message}`);
+            setLoading(false);
+          },
         });
-
-        if (parsedData.data && parsedData.data.length > 0) {
-          console.log(
-            `Successfully loaded ${parsedData.data.length} records from ${csvFilePath}`
-          );
-          setData(parsedData.data);
-          analyzeData(parsedData.data);
-        } else {
-          console.warn(
-            `No data found in ${csvFilePath}, falling back to mock data`
-          );
-          const mockData = generateMockData();
-          setData(mockData);
-          analyzeData(mockData);
-        }
-
-        setLoading(false);
       } catch (error) {
-        console.error("Error reading or parsing data:", error);
-        console.log("Falling back to mock data due to error");
-        const mockData = generateMockData();
-        setData(mockData);
-        analyzeData(mockData);
+        console.error("Error loading data:", error);
         setLoading(false);
+        setError(error.message);
       }
     };
 
     processData();
   }, []);
 
-  // Generate mock data for demonstration
-  const generateMockData = () => {
-    const stations = [
-      "London Euston",
-      "Manchester Piccadilly",
-      "Birmingham New Street",
-      "Liverpool Lime Street",
-      "Leeds",
-      "Glasgow Central",
-      "Edinburgh Waverley",
-      "Cardiff Central",
-      "Bristol Temple Meads",
-      "Newcastle",
-    ];
-
-    const ticketTypes = ["Advance", "Off-Peak", "Anytime", "Season"];
-    const ticketClasses = ["Standard", "First Class"];
-    const journeyStatuses = ["On Time", "Delayed", "Cancelled"];
-    const delayReasons = [
-      "Signal Failure",
-      "Technical Issue",
-      "Weather Conditions",
-      "Staff Shortage",
-      "Traffic",
-    ];
-
-    const mockData = [];
-
-    for (let i = 0; i < 1000; i++) {
-      const departureStation =
-        stations[Math.floor(Math.random() * stations.length)];
-      let arrivalStation;
-      do {
-        arrivalStation = stations[Math.floor(Math.random() * stations.length)];
-      } while (arrivalStation === departureStation);
-
-      const hour = Math.floor(Math.random() * 24);
-      const minute = Math.floor(Math.random() * 60);
-      const departureTime = `${hour.toString().padStart(2, "0")}:${minute
-        .toString()
-        .padStart(2, "0")}`;
-
-      // Generate a random journey duration between 30 minutes and 5 hours
-      const durationMinutes = 30 + Math.floor(Math.random() * 270);
-      const arrivalHour =
-        (hour + Math.floor((minute + durationMinutes) / 60)) % 24;
-      const arrivalMinute = (minute + durationMinutes) % 60;
-      const arrivalTime = `${arrivalHour
-        .toString()
-        .padStart(2, "0")}:${arrivalMinute.toString().padStart(2, "0")}`;
-
-      const journeyStatus =
-        journeyStatuses[Math.floor(Math.random() * journeyStatuses.length)];
-
-      let actualArrivalTime = arrivalTime;
-      let delayReason = null;
-
-      if (journeyStatus === "Delayed") {
-        const delayMinutes = 15 + Math.floor(Math.random() * 180);
-        const actualArrivalHour =
-          (arrivalHour + Math.floor((arrivalMinute + delayMinutes) / 60)) % 24;
-        const actualArrivalMinute = (arrivalMinute + delayMinutes) % 60;
-        actualArrivalTime = `${actualArrivalHour
-          .toString()
-          .padStart(2, "0")}:${actualArrivalMinute
-          .toString()
-          .padStart(2, "0")}`;
-        delayReason =
-          delayReasons[Math.floor(Math.random() * delayReasons.length)];
-      }
-
-      const ticketType =
-        ticketTypes[Math.floor(Math.random() * ticketTypes.length)];
-      const ticketClass =
-        ticketClasses[Math.floor(Math.random() * ticketClasses.length)];
-
-      // Generate a price between £20 and £200
-      const price = 20 + Math.floor(Math.random() * 180);
-
-      // Generate a random date in 2023
-      const month = 1 + Math.floor(Math.random() * 12);
-      const day = 1 + Math.floor(Math.random() * 28);
-      const dateOfJourney = `2023-${month.toString().padStart(2, "0")}-${day
-        .toString()
-        .padStart(2, "0")}`;
-
-      mockData.push({
-        "Departure Station": departureStation,
-        "Arrival Destination": arrivalStation,
-        "Departure Time": departureTime,
-        "Arrival Time": arrivalTime,
-        "Actual Arrival Time": actualArrivalTime,
-        "Journey Status": journeyStatus,
-        "Reason for Delay": delayReason,
-        "Ticket Type": ticketType,
-        "Ticket Class": ticketClass,
-        Price: price,
-        "Date of Journey": dateOfJourney,
-      });
-    }
-
-    return mockData;
-  };
-
   const analyzeData = (data) => {
-    // 1. Top Routes Analysis
-    const routeCounts = {};
-    data.forEach((record) => {
-      const route = `${record["Departure Station"]} to ${record["Arrival Destination"]}`;
-      routeCounts[route] = (routeCounts[route] || 0) + 1;
-    });
-
-    const topRoutes = Object.entries(routeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([route, count]) => ({ route, count }));
-
-    // 2. Hourly Distribution
-    const hourCounts = {};
-    data.forEach((record) => {
-      if (record["Departure Time"]) {
-        const hour = record["Departure Time"].split(":")[0];
-        hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-      }
-    });
-
-    const hourlyDistribution = Object.entries(hourCounts)
-      .map(([hour, count]) => ({
-        hour: parseInt(hour),
-        count,
-        formattedHour: `${hour}:00`,
-      }))
-      .sort((a, b) => a.hour - b.hour);
-
-    // 3. Revenue by Ticket Type
-    const revenueByTicketType = [];
-    const ticketTypeRevenue = _(data)
-      .groupBy("Ticket Type")
-      .mapValues((group) => _.sumBy(group, "Price"))
-      .value();
-
-    Object.entries(ticketTypeRevenue).forEach(([type, revenue]) => {
-      revenueByTicketType.push({ name: type, value: revenue });
-    });
-
-    // 4. Revenue by Ticket Class
-    const revenueByTicketClass = [];
-    const ticketClassRevenue = _(data)
-      .groupBy("Ticket Class")
-      .mapValues((group) => _.sumBy(group, "Price"))
-      .value();
-
-    Object.entries(ticketClassRevenue).forEach(([cls, revenue]) => {
-      revenueByTicketClass.push({ name: cls, value: revenue });
-    });
-
-    // 5. Journey Status
-    const journeyStatusCounts = _(data).countBy("Journey Status").value();
-
-    const journeyStatus = Object.entries(journeyStatusCounts).map(
-      ([status, count]) => ({ name: status, value: count })
-    );
-
-    // 6. Delay Reasons
-    function normalizeDelayReason(reason) {
-      if (!reason) return "Unknown";
-
-      reason = reason.toLowerCase();
-
-      if (reason.includes("signal")) return "Signal Failure";
-      if (reason.includes("technical") || reason.includes("issue"))
-        return "Technical Issue";
-      if (reason.includes("weather")) return "Weather Conditions";
-      if (reason.includes("staff") || reason.includes("staffing"))
-        return "Staff Shortage";
-      if (reason.includes("traffic")) return "Traffic";
-
-      return reason;
-    }
-
-    const delayReasonCounts = {};
-    data.forEach((record) => {
-      if (
-        record["Journey Status"] === "Delayed" &&
-        record["Reason for Delay"]
-      ) {
-        const reason = normalizeDelayReason(record["Reason for Delay"]);
-        delayReasonCounts[reason] = (delayReasonCounts[reason] || 0) + 1;
-      }
-    });
-
-    const delayReasons = Object.entries(delayReasonCounts)
-      .map(([reason, count]) => ({ name: reason, value: count }))
-      .sort((a, b) => b.value - a.value);
-
-    // 7. Revenue by Month
-    data.forEach((record) => {
-      if (record["Date of Journey"]) {
-        try {
-          const date = new Date(record["Date of Journey"]);
-          record.month = date.getMonth() + 1; // 1 = January, 2 = February, etc.
-          record.monthName = [
-            "January",
-            "February",
-            "March",
-            "April",
-            "May",
-            "June",
-            "July",
-            "August",
-            "September",
-            "October",
-            "November",
-            "December",
-          ][record.month - 1];
-        } catch (e) {
-          // Skip invalid dates
-        }
-      }
-    });
-
-    const revenueByMonth = _(data)
-      .filter((record) => record.monthName)
-      .groupBy("monthName")
-      .mapValues((group) => _.sumBy(group, "Price"))
-      .value();
-
-    const monthOrder = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-
-    const revenueByMonthChart = Object.entries(revenueByMonth)
-      .map(([month, revenue]) => ({ month, revenue }))
-      .sort(
-        (a, b) => monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
-      );
-
-    // 8. Revenue by Day of Week
-    data.forEach((record) => {
-      if (record["Date of Journey"]) {
-        try {
-          const date = new Date(record["Date of Journey"]);
-          record.dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
-          record.dayName = [
-            "Sunday",
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-          ][record.dayOfWeek];
-        } catch (e) {
-          // Skip invalid dates
-        }
-      }
-    });
-
-    const revenueByDayOfWeek = _(data)
-      .filter((record) => record.dayName)
-      .groupBy("dayName")
-      .mapValues((group) => _.sumBy(group, "Price"))
-      .value();
-
-    const dayOrder = [
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-      "Sunday",
-    ];
-
-    const revenueByDayOfWeekChart = Object.entries(revenueByDayOfWeek)
-      .map(([day, revenue]) => ({ day, revenue }))
-      .sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
-
-    // 9. Routes with Delay
-    const delayByRoute = _(data)
-      .filter((record) => record["Journey Status"] === "Delayed")
-      .groupBy(
-        (record) =>
-          `${record["Departure Station"]} to ${record["Arrival Destination"]}`
-      )
-      .mapValues((group) => {
-        let totalDelayMinutes = 0;
-        let count = 0;
-
-        group.forEach((record) => {
-          if (record["Arrival Time"] && record["Actual Arrival Time"]) {
-            try {
-              const scheduledArr = new Date(
-                `2023-01-01 ${record["Arrival Time"]}`
-              );
-              const actualArr = new Date(
-                `2023-01-01 ${record["Actual Arrival Time"]}`
-              );
-              const delayMinutes = (actualArr - scheduledArr) / (1000 * 60);
-
-              if (delayMinutes > 0) {
-                totalDelayMinutes += delayMinutes;
-                count++;
-              }
-            } catch (e) {
-              // Skip records with invalid time formats
-            }
-          }
-        });
-
-        return count > 0
-          ? {
-              avgDelay: totalDelayMinutes / count,
-              count: count,
-            }
-          : null;
-      })
-      .value();
-
-    const routesWithDelay = Object.entries(delayByRoute)
-      .filter(([_, stats]) => stats && stats.count >= 2) // For mock data, we'll lower the threshold
-      .sort((a, b) => b[1].avgDelay - a[1].avgDelay)
-      .slice(0, 10)
-      .map(([route, stats]) => ({
-        route,
-        avgDelay: Math.round(stats.avgDelay),
-        count: stats.count,
+    try {
+      // Ensure numeric values are properly converted
+      data = data.map((record) => ({
+        ...record,
+        Price:
+          typeof record.Price === "string"
+            ? parseFloat(record.Price) || 0
+            : record.Price || 0,
       }));
 
-    // 10. Refund Requests
-    const refundRequests = [
-      { status: "Delayed", requestedRefund: 546, noRefund: 1746 },
-      { status: "Cancelled", requestedRefund: 572, noRefund: 1308 },
-    ];
+      // 1. Top Routes Analysis
+      const routeCounts = {};
+      data.forEach((record) => {
+        if (record["Departure Station"] && record["Arrival Destination"]) {
+          const route = `${record["Departure Station"]} to ${record["Arrival Destination"]}`;
+          routeCounts[route] = (routeCounts[route] || 0) + 1;
+        }
+      });
 
-    setDashboardData({
-      topRoutes,
-      hourlyDistribution,
-      revenueByTicketType,
-      revenueByTicketClass,
-      journeyStatus,
-      delayReasons,
-      revenueByMonth: revenueByMonthChart,
-      revenueByDayOfWeek: revenueByDayOfWeekChart,
-      routesWithDelay,
-      refundRequests,
-    });
+      const topRoutes = Object.entries(routeCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([route, count]) => ({ route, count }));
+
+      // 2. Hourly Distribution
+      const hourCounts = {};
+      data.forEach((record) => {
+        if (record["Departure Time"]) {
+          const hour = record["Departure Time"].split(":")[0];
+          hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+        }
+      });
+
+      const hourlyDistribution = Object.entries(hourCounts)
+        .map(([hour, count]) => ({
+          hour: parseInt(hour),
+          count,
+          formattedHour: `${hour}:00`,
+        }))
+        .sort((a, b) => a.hour - b.hour);
+
+      // 3. Revenue by Ticket Type
+      const revenueByTicketType = [];
+      const ticketTypeRevenue = _(data)
+        .groupBy("Ticket Type")
+        .mapValues((group) => _.sumBy(group, "Price"))
+        .value();
+
+      Object.entries(ticketTypeRevenue).forEach(([type, revenue]) => {
+        revenueByTicketType.push({ name: type, value: revenue });
+      });
+
+      // 4. Revenue by Ticket Class
+      const revenueByTicketClass = [];
+      const ticketClassRevenue = _(data)
+        .groupBy("Ticket Class")
+        .mapValues((group) => _.sumBy(group, "Price"))
+        .value();
+
+      Object.entries(ticketClassRevenue).forEach(([cls, revenue]) => {
+        revenueByTicketClass.push({ name: cls, value: revenue });
+      });
+
+      // 5. Journey Status
+      const journeyStatusCounts = _(data).countBy("Journey Status").value();
+
+      const journeyStatus = Object.entries(journeyStatusCounts).map(
+        ([status, count]) => ({ name: status, value: count })
+      );
+
+      // 6. Delay Reasons
+      function normalizeDelayReason(reason) {
+        if (!reason) return "Unknown";
+
+        reason = reason.toLowerCase();
+
+        if (reason.includes("signal")) return "Signal Failure";
+        if (reason.includes("technical") || reason.includes("issue"))
+          return "Technical Issue";
+        if (reason.includes("weather")) return "Weather Conditions";
+        if (reason.includes("staff") || reason.includes("staffing"))
+          return "Staff Shortage";
+        if (reason.includes("traffic")) return "Traffic";
+
+        return reason;
+      }
+
+      const delayReasonCounts = {};
+      data.forEach((record) => {
+        if (
+          record["Journey Status"] === "Delayed" &&
+          record["Reason for Delay"]
+        ) {
+          const reason = normalizeDelayReason(record["Reason for Delay"]);
+          delayReasonCounts[reason] = (delayReasonCounts[reason] || 0) + 1;
+        }
+      });
+
+      const delayReasons = Object.entries(delayReasonCounts)
+        .map(([reason, count]) => ({ name: reason, value: count }))
+        .sort((a, b) => b.value - a.value);
+
+      // 7. Revenue by Month
+      data.forEach((record) => {
+        if (record["Date of Journey"]) {
+          try {
+            const date = new Date(record["Date of Journey"]);
+            record.month = date.getMonth() + 1; // 1 = January, 2 = February, etc.
+            record.monthName = [
+              "January",
+              "February",
+              "March",
+              "April",
+              "May",
+              "June",
+              "July",
+              "August",
+              "September",
+              "October",
+              "November",
+              "December",
+            ][record.month - 1];
+          } catch (e) {
+            // Skip invalid dates
+          }
+        }
+      });
+
+      const revenueByMonth = _(data)
+        .filter((record) => record.monthName)
+        .groupBy("monthName")
+        .mapValues((group) => _.sumBy(group, "Price"))
+        .value();
+
+      const monthOrder = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+      ];
+
+      const revenueByMonthChart = Object.entries(revenueByMonth)
+        .map(([month, revenue]) => ({ month, revenue }))
+        .sort(
+          (a, b) => monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month)
+        );
+
+      // 8. Revenue by Day of Week
+      data.forEach((record) => {
+        if (record["Date of Journey"]) {
+          try {
+            const date = new Date(record["Date of Journey"]);
+            record.dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+            record.dayName = [
+              "Sunday",
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday",
+              "Saturday",
+            ][record.dayOfWeek];
+          } catch (e) {
+            // Skip invalid dates
+          }
+        }
+      });
+
+      const revenueByDayOfWeek = _(data)
+        .filter((record) => record.dayName)
+        .groupBy("dayName")
+        .mapValues((group) => _.sumBy(group, "Price"))
+        .value();
+
+      const dayOrder = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+      ];
+
+      const revenueByDayOfWeekChart = Object.entries(revenueByDayOfWeek)
+        .map(([day, revenue]) => ({ day, revenue }))
+        .sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
+
+      // 9. Routes with Delay
+      const delayByRoute = _(data)
+        .filter((record) => record["Journey Status"] === "Delayed")
+        .groupBy(
+          (record) =>
+            `${record["Departure Station"]} to ${record["Arrival Destination"]}`
+        )
+        .mapValues((group) => {
+          let totalDelayMinutes = 0;
+          let count = 0;
+
+          group.forEach((record) => {
+            if (record["Arrival Time"] && record["Actual Arrival Time"]) {
+              try {
+                const scheduledArr = new Date(
+                  `2023-01-01 ${record["Arrival Time"]}`
+                );
+                const actualArr = new Date(
+                  `2023-01-01 ${record["Actual Arrival Time"]}`
+                );
+                const delayMinutes = (actualArr - scheduledArr) / (1000 * 60);
+
+                if (delayMinutes > 0) {
+                  totalDelayMinutes += delayMinutes;
+                  count++;
+                }
+              } catch (e) {
+                // Skip records with invalid time formats
+              }
+            }
+          });
+
+          return count > 0
+            ? {
+                avgDelay: totalDelayMinutes / count,
+                count: count,
+              }
+            : null;
+        })
+        .value();
+
+      const routesWithDelay = Object.entries(delayByRoute)
+        .filter(([_, stats]) => stats && stats.count >= 2) // For mock data, we'll lower the threshold
+        .sort((a, b) => b[1].avgDelay - a[1].avgDelay)
+        .slice(0, 10)
+        .map(([route, stats]) => ({
+          route,
+          avgDelay: Math.round(stats.avgDelay),
+          count: stats.count,
+        }));
+
+      // 10. Refund Requests
+      // Calculate refund requests dynamically from data
+      const refundRequestsByStatus = _(data)
+        .filter(
+          (record) =>
+            record["Journey Status"] === "Delayed" ||
+            record["Journey Status"] === "Cancelled"
+        )
+        .groupBy("Journey Status")
+        .mapValues((group) => ({
+          requestedRefund: _.filter(
+            group,
+            (record) => record["Refund Request"] === "Yes"
+          ).length,
+          noRefund: _.filter(
+            group,
+            (record) => record["Refund Request"] === "No"
+          ).length,
+        }))
+        .value();
+
+      const refundRequests = Object.entries(refundRequestsByStatus).map(
+        ([status, counts]) => ({
+          status,
+          requestedRefund: counts.requestedRefund,
+          noRefund: counts.noRefund,
+        })
+      );
+
+      setDashboardData({
+        topRoutes,
+        hourlyDistribution,
+        revenueByTicketType,
+        revenueByTicketClass,
+        journeyStatus,
+        delayReasons,
+        revenueByMonth: revenueByMonthChart,
+        revenueByDayOfWeek: revenueByDayOfWeekChart,
+        routesWithDelay,
+        refundRequests,
+      });
+    } catch (error) {
+      console.error("Error analyzing data:", error);
+      setError(
+        `Error analyzing data: ${error.message}. Please check that your CSV file has the correct format.`
+      );
+      setLoading(false);
+      return;
+    }
   };
 
   const renderTopRoutes = () => (
@@ -819,7 +954,40 @@ const RailwayDashboard = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        Loading data...
+        {error ? `Error: ${error}` : "Loading data..."}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen p-4">
+        <h2 className="text-2xl font-bold text-red-600 mb-4">
+          Error Loading Data
+        </h2>
+        <p className="text-lg mb-4">{error}</p>
+        <p className="text-gray-600">
+          Please check that the railway.csv file exists in the public folder and
+          has the correct format.
+          <br />
+          Expected columns: "Departure Station", "Arrival Destination",
+          "Departure Time", "Arrival Time", "Actual Arrival Time", "Journey
+          Status", "Reason for Delay", "Ticket Type", "Ticket Class", "Price",
+          "Date of Journey", "Refund Request"
+          <br />
+          <br />
+          <strong>Troubleshooting:</strong>
+          <br />
+          1. Make sure the CSV file is in the public folder and named
+          "railway.csv"
+          <br />
+          2. Check that the CSV file has the correct column headers (they must
+          match exactly)
+          <br />
+          3. Try restarting the development server with "npm start"
+          <br />
+          4. Check the browser console for more detailed error messages
+        </p>
       </div>
     );
   }
@@ -896,8 +1064,37 @@ const RailwayDashboard = () => {
               minutes)
             </li>
             <li>
-              24% of passengers request refunds after delays, while 30% request
-              refunds after cancellations
+              {dashboardData.refundRequests.find((r) => r.status === "Delayed")
+                ? `${Math.round(
+                    (dashboardData.refundRequests.find(
+                      (r) => r.status === "Delayed"
+                    ).requestedRefund /
+                      (dashboardData.refundRequests.find(
+                        (r) => r.status === "Delayed"
+                      ).requestedRefund +
+                        dashboardData.refundRequests.find(
+                          (r) => r.status === "Delayed"
+                        ).noRefund)) *
+                      100
+                  )}% of passengers request refunds after delays`
+                : "24% of passengers request refunds after delays"}
+              , while
+              {dashboardData.refundRequests.find(
+                (r) => r.status === "Cancelled"
+              )
+                ? `${Math.round(
+                    (dashboardData.refundRequests.find(
+                      (r) => r.status === "Cancelled"
+                    ).requestedRefund /
+                      (dashboardData.refundRequests.find(
+                        (r) => r.status === "Cancelled"
+                      ).requestedRefund +
+                        dashboardData.refundRequests.find(
+                          (r) => r.status === "Cancelled"
+                        ).noRefund)) *
+                      100
+                  )}% request refunds after cancellations`
+                : "30% request refunds after cancellations"}
             </li>
           </ul>
         </div>
