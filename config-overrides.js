@@ -6,8 +6,8 @@ module.exports = override(
   // Add WebpackManifestPlugin to generate a manifest file with content hashes
   addWebpackPlugin(
     new WebpackManifestPlugin({
-      fileName: "asset-manifest.json",
-      publicPath: "/",
+      fileName: "custom-asset-manifest.json",
+      publicPath: "/railway-dashboard/",
       generate: (seed, files, entrypoints) => {
         const manifestFiles = files.reduce((manifest, file) => {
           manifest[file.name] = file.path;

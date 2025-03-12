@@ -2,6 +2,7 @@
   "name": "railway-dashboard",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://fortran01.github.io/railway-dashboard",
   "dependencies": {
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
@@ -18,8 +19,11 @@
   },
   "scripts": {
     "start": "react-app-rewired start",
-    "build": "GENERATE_SOURCEMAP=false react-app-rewired build && node ./scripts/add-cache-headers.js",
+    "build": "react-app-rewired build",
+    "build:full": "GENERATE_SOURCEMAP=false react-app-rewired build && node ./scripts/add-cache-headers.js",
     "build:dev": "react-app-rewired build",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build",
     "test": "react-app-rewired test",
     "eject": "react-scripts eject"
   },
@@ -43,6 +47,7 @@
   },
   "devDependencies": {
     "customize-cra": "^1.0.0",
+    "gh-pages": "^6.3.0",
     "react-app-rewired": "^2.2.1",
     "webpack-manifest-plugin": "^5.0.0"
   }
